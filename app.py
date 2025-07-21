@@ -20,6 +20,10 @@ security = HTTPBearer()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "1ece783ac40d4fc0fc4677d974f00124d9e686133426a1630d9c95dc75a1837c")
 
+# Validate environment variables
+if not OPENAI_API_KEY:
+    print("Warning: OPENAI_API_KEY not set. The API will not function properly without it.")
+
 # Initialize OpenAI client with custom base URL
 client = OpenAI(
     api_key=OPENAI_API_KEY,

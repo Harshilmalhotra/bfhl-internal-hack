@@ -1,4 +1,10 @@
+import sys
+import os
+
+# Add parent directory to path to import app module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from app import app
 
-# Vercel requires the app to be exposed as 'app'
-# This file serves as the entry point for Vercel
+# Expose the FastAPI app for Vercel
+handler = app
