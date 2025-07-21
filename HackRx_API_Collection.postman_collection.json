@@ -1,0 +1,197 @@
+{
+	"info": {
+		"_postman_id": "hackrx-api-collection",
+		"name": "HackRx Document Intelligence API",
+		"description": "Collection for testing the Document Intelligence API with PDF processing and Q&A capabilities",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/health",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"health"
+					]
+				}
+			}
+		},
+		{
+			"name": "Root Endpoint",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8000/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						""
+					]
+				}
+			}
+		},
+		{
+			"name": "Process Document - HackRx Sample",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "1ece783ac40d4fc0fc4677d974f00124d9e686133426a1630d9c95dc75a1837c",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"documents\": \"https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D\",\n    \"questions\": [\n        \"What is the grace period for premium payment under the National Parivar Mediclaim Plus Policy?\",\n        \"What is the waiting period for pre-existing diseases (PED) to be covered?\",\n        \"Does this policy cover maternity expenses, and what are the conditions?\",\n        \"What is the waiting period for cataract surgery?\",\n        \"Are the medical expenses for an organ donor covered under this policy?\",\n        \"What is the No Claim Discount (NCD) offered in this policy?\",\n        \"Is there a benefit for preventive health check-ups?\",\n        \"How does the policy define a 'Hospital'?\",\n        \"What is the extent of coverage for AYUSH treatments?\",\n        \"Are there any sub-limits on room rent and ICU charges for Plan A?\"\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/hackrx/run",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"hackrx",
+						"run"
+					]
+				}
+			}
+		},
+		{
+			"name": "Process Document - Invalid Auth",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "invalid_token_12345",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"documents\": \"https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D\",\n    \"questions\": [\"Test question\"]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/hackrx/run",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"hackrx",
+						"run"
+					]
+				}
+			}
+		},
+		{
+			"name": "Process Document - Custom PDF",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "1ece783ac40d4fc0fc4677d974f00124d9e686133426a1630d9c95dc75a1837c",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"documents\": \"YOUR_PDF_URL_HERE\",\n    \"questions\": [\n        \"Your first question?\",\n        \"Your second question?\",\n        \"Your third question?\"\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:8000/api/v1/hackrx/run",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"v1",
+						"hackrx",
+						"run"
+					]
+				}
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "1ece783ac40d4fc0fc4677d974f00124d9e686133426a1630d9c95dc75a1837c",
+			"type": "string"
+		}
+	]
+}
