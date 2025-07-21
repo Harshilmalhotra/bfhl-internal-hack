@@ -154,8 +154,7 @@ async def root():
 
 @app.post("/api/v1/hackrx/run", response_model=DocumentResponse)
 async def process_document(
-    request: DocumentRequest,
-    token: str = Depends(verify_token)
+    request: DocumentRequest
 ):
     """Process document and answer questions"""
     try:

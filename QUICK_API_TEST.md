@@ -15,7 +15,6 @@ curl https://your-app.vercel.app/health
 ### 3. Document Processing (POST)
 ```bash
 curl -X POST https://your-app.vercel.app/api/v1/hackrx/run \
-  -H "Authorization: Bearer 1ece783ac40d4fc0fc4677d974f00124d9e686133426a1630d9c95dc75a1837c" \
   -H "Content-Type: application/json" \
   -d '{
     "documents": "https://example.com/sample.pdf",
@@ -47,7 +46,6 @@ Save this as `test_vercel.sh` and run it:
 
 # Replace with your actual Vercel URL
 API_URL="https://your-app.vercel.app"
-AUTH_TOKEN="1ece783ac40d4fc0fc4677d974f00124d9e686133426a1630d9c95dc75a1837c"
 
 echo "Testing Health Endpoint..."
 curl -s "$API_URL/health" | jq .
@@ -57,7 +55,6 @@ curl -s "$API_URL/" | jq .
 
 echo -e "\n\nTesting Document Processing..."
 curl -s -X POST "$API_URL/api/v1/hackrx/run" \
-  -H "Authorization: Bearer $AUTH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "documents": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
