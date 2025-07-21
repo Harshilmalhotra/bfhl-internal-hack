@@ -21,7 +21,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Document Intelligence API", version="5.0.0")
+app = FastAPI(title="Document Intelligence API", version="6.0.0")
 security = HTTPBearer()
 
 # Configuration
@@ -35,17 +35,17 @@ if not OPENAI_API_KEY:
 client = AsyncOpenAI(
     api_key=OPENAI_API_KEY,
     base_url="https://bfhldevapigw.healthrx.co.in/sp-gw/api/openai/v1/",
-    timeout=30.0
+    timeout=45.0  # Increased timeout
 )
 
-# Thread pool for CPU-intensive tasks
+# Thread pool
 executor = ThreadPoolExecutor(max_workers=4)
 
-# Document cache
+# Cache
 document_cache = {}
-CACHE_TTL = 3600  # 1 hour
+CACHE_TTL = 3600
 
-# Request/Response Models
+# Models
 class DocumentRequest(BaseModel):
     documents: HttpUrl
     questions: List[str]
@@ -53,14 +53,14 @@ class DocumentRequest(BaseModel):
 class DocumentResponse(BaseModel):
     answers: List[str]
 
-# Authentication
+# Auth
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     if credentials.credentials != AUTH_TOKEN:
         raise HTTPException(status_code=403, detail="Invalid authentication token")
     return credentials.credentials
 
 async def download_document(url: str) -> bytes:
-    """Download document quickly"""
+    """Download document"""
     timeout = httpx.Timeout(30.0, connect=10.0)
     headers = {'User-Agent': 'Mozilla/5.0'}
     
@@ -72,87 +72,165 @@ async def download_document(url: str) -> bytes:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Download failed: {str(e)}")
 
-def extract_text_from_pdf_fast(pdf_content: bytes) -> str:
-    """Fast PDF text extraction"""
+def extract_text_comprehensive(pdf_content: bytes) -> str:
+    """Extract ALL text from PDF using multiple methods"""
     try:
         doc = fitz.open(stream=pdf_content, filetype="pdf")
-        text_parts = []
+        all_pages = []
         
-        for page in doc:
-            # Use dict extraction for better structure
+        for page_num, page in enumerate(doc):
+            # Method 1: Get structured text
             page_dict = page.get_text("dict")
-            page_text = []
+            page_lines = []
             
+            # Extract all text blocks
             for block in page_dict["blocks"]:
                 if "lines" in block:
                     for line in block["lines"]:
                         line_text = " ".join(span["text"] for span in line["spans"])
                         if line_text.strip():
-                            page_text.append(line_text)
+                            page_lines.append(line_text.strip())
             
-            if page_text:
-                text_parts.append("\n".join(page_text))
+            # Method 2: If no text found, try standard extraction
+            if not page_lines:
+                standard_text = page.get_text()
+                if standard_text.strip():
+                    page_lines = standard_text.split('\n')
+            
+            # Add page content
+            if page_lines:
+                page_content = f"\n===== PAGE {page_num + 1} =====\n"
+                page_content += "\n".join(page_lines)
+                all_pages.append(page_content)
         
         doc.close()
-        full_text = "\n\n".join(text_parts)
         
-        # Basic cleaning
-        full_text = re.sub(r'\s+', ' ', full_text)
-        full_text = re.sub(r'\n{3,}', '\n\n', full_text)
+        if not all_pages:
+            raise Exception("No text found in PDF")
         
+        # Combine all pages
+        full_text = "\n\n".join(all_pages)
+        
+        # Clean but preserve structure
+        full_text = re.sub(r' +', ' ', full_text)  # Multiple spaces to single
+        full_text = re.sub(r'\n{4,}', '\n\n\n', full_text)  # Limit newlines
+        
+        logger.info(f"Extracted {len(full_text)} characters from {len(all_pages)} pages")
         return full_text
+        
     except Exception as e:
         raise Exception(f"PDF extraction failed: {str(e)}")
 
 async def extract_text_from_pdf(pdf_content: bytes) -> str:
-    """Async PDF extraction"""
+    """Async wrapper"""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, extract_text_from_pdf_fast, pdf_content)
+    return await loop.run_in_executor(executor, extract_text_comprehensive, pdf_content)
 
-async def process_questions_batch(text: str, questions: List[str]) -> List[str]:
-    """Process all questions in a single API call"""
+def create_smart_chunks(text: str, max_chunk_size: int = 30000) -> List[str]:
+    """Create overlapping chunks that preserve context"""
+    if len(text) <= max_chunk_size:
+        return [text]
     
-    # Format all questions
-    questions_text = "\n".join([f"Q{i+1}: {q}" for i, q in enumerate(questions)])
+    chunks = []
+    pages = text.split("===== PAGE")
     
-    prompt = f"""Analyze this document and answer the questions. Be specific and include numbers, dates, percentages.
+    current_chunk = ""
+    for page in pages:
+        if not page.strip():
+            continue
+            
+        page_text = "===== PAGE" + page if page else ""
+        
+        # If adding this page would exceed limit, save current chunk
+        if current_chunk and len(current_chunk) + len(page_text) > max_chunk_size:
+            chunks.append(current_chunk)
+            # Start new chunk with overlap from last page
+            current_chunk = page_text
+        else:
+            current_chunk += "\n" + page_text if current_chunk else page_text
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return chunks
 
-DOCUMENT:
-{text[:15000]}  # Limit context for speed
+async def answer_questions_smart(text: str, questions: List[str]) -> List[str]:
+    """Process questions with smart chunking for long documents"""
+    
+    # Create chunks
+    chunks = create_smart_chunks(text, max_chunk_size=30000)
+    logger.info(f"Document split into {len(chunks)} chunks")
+    
+    # If document fits in one chunk, process normally
+    if len(chunks) == 1:
+        return await process_single_chunk(text, questions)
+    
+    # For multiple chunks, search each chunk
+    all_answers = ["Information not found in the document"] * len(questions)
+    
+    # Process each chunk
+    for i, chunk in enumerate(chunks):
+        logger.info(f"Processing chunk {i+1}/{len(chunks)}")
+        chunk_answers = await process_single_chunk(chunk, questions)
+        
+        # Update answers if better ones found
+        for j, answer in enumerate(chunk_answers):
+            if answer != "Information not found in the document":
+                all_answers[j] = answer
+    
+    return all_answers
 
-QUESTIONS:
-{questions_text}
+async def process_single_chunk(text: str, questions: List[str]) -> List[str]:
+    """Process questions for a single chunk"""
+    
+    questions_formatted = "\n".join([f"Question {i+1}: {q}" for i, q in enumerate(questions)])
+    
+    prompt = f"""You are analyzing an insurance policy document. Answer each question with SPECIFIC details from the document.
 
-For each question, provide a specific answer based ONLY on the document. If not found, say "Information not found in the document".
+DOCUMENT TEXT:
+{text}
+
+QUESTIONS TO ANSWER:
+{questions_formatted}
+
+CRITICAL INSTRUCTIONS:
+1. Search the ENTIRE document for each answer
+2. Include EXACT numbers, percentages, time periods (e.g., "30 days", "36 months", "5%")
+3. For waiting periods, look for terms like "waiting period", "after", "continuous coverage"
+4. For coverage details, look for "covered", "benefit", "limit", "sub-limit"
+5. Only say "Information not found in the document" if you've searched everywhere
+6. Be very specific - include section references if mentioned
 
 Format your response EXACTLY as:
-A1: [answer to Q1]
-A2: [answer to Q2]
-... etc
+Answer 1: [specific answer with numbers/details]
+Answer 2: [specific answer with numbers/details]
+... etc.
 
-Include specific details like amounts, percentages, time periods."""
+Remember: Extract EXACT information, not general statements."""
 
     try:
         response = await client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a document analyst. Provide precise, specific answers."},
+                {"role": "system", "content": "You are an insurance policy expert. Extract precise information including all numbers, percentages, and time periods."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.0,
-            max_tokens=2500
+            max_tokens=3000
         )
         
-        # Parse answers
+        # Parse response
         response_text = response.choices[0].message.content
         answers = []
         
-        for line in response_text.split('\n'):
-            match = re.match(r'^A(\d+):\s*(.+)', line.strip())
+        # Extract answers
+        lines = response_text.split('\n')
+        for line in lines:
+            match = re.match(r'^Answer\s*(\d+):\s*(.+)', line.strip())
             if match:
                 answers.append(match.group(2).strip())
         
-        # Fill missing answers
+        # Ensure we have all answers
         while len(answers) < len(questions):
             answers.append("Information not found in the document")
         
@@ -164,11 +242,11 @@ Include specific details like amounts, percentages, time periods."""
 
 @app.get("/")
 async def root():
-    return {"message": "Document Intelligence API", "version": "5.0.0"}
+    return {"message": "Document Intelligence API", "version": "6.0.0"}
 
 @app.post("/api/v1/hackrx/run", response_model=DocumentResponse)
 async def process_document(request: DocumentRequest):
-    """Fast document processing"""
+    """Process document with comprehensive extraction"""
     start_time = time.time()
     
     try:
@@ -181,22 +259,22 @@ async def process_document(request: DocumentRequest):
                 logger.info("Cache hit!")
                 return DocumentResponse(answers=document_cache[cache_key]['answers'])
         
-        # Download and extract in parallel
-        download_task = download_document(str(request.documents))
-        
-        # Get PDF content
-        pdf_content = await download_task
+        # Download
+        logger.info("Downloading document...")
+        pdf_content = await download_document(str(request.documents))
         logger.info(f"Downloaded {len(pdf_content)} bytes")
         
-        # Extract text
+        # Extract ALL text
+        logger.info("Extracting text...")
         text = await extract_text_from_pdf(pdf_content)
         logger.info(f"Extracted {len(text)} characters")
         
         if len(text) < 100:
             raise HTTPException(status_code=400, detail="No text extracted")
         
-        # Process all questions at once
-        answers = await process_questions_batch(text, request.questions)
+        # Process questions with smart chunking
+        logger.info("Processing questions...")
+        answers = await answer_questions_smart(text, request.questions)
         
         # Cache results
         document_cache[cache_key] = {
@@ -204,7 +282,7 @@ async def process_document(request: DocumentRequest):
             'time': time.time()
         }
         
-        # Clean old cache
+        # Clean cache
         if len(document_cache) > 100:
             oldest = min(document_cache.keys(), key=lambda k: document_cache[k]['time'])
             del document_cache[oldest]
@@ -219,7 +297,7 @@ async def process_document(request: DocumentRequest):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": "5.0.0"}
+    return {"status": "healthy", "version": "6.0.0", "cache_size": len(document_cache)}
 
 if __name__ == "__main__":
     import uvicorn
