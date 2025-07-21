@@ -47,8 +47,8 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
 # Document processing functions
 async def download_document(url: str) -> bytes:
     """Download document from URL"""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(str(url))
+    async with httpx.AsyncClient() as http_client:
+        response = await http_client.get(str(url))
         if response.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to download document")
         return response.content
